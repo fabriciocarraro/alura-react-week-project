@@ -1,21 +1,74 @@
 import { Box, Text, TextField, Image, Button } from '@skynexui/components';
 import React, { useState } from 'react';
 import appConfig from '../config.json';
+import { createClient } from '@supabase/supabase-js';
+import { useRouter } from 'next/router';
+import { ButtonSendSticker } from '../src/components/ButtonSendSticker'
+
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlhdCI6MTY0MzQ3MjM4NiwiZXhwIjoxOTU5MDQ4Mzg2fQ.jyhbSMx1cY3lh2wBh2AKmiLUuf9nLjjjbRqgqlJGFX0';
+const SUPABASE_URL = 'https://dflsbejgjtikghmqtbbn.supabase.co';
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function escutaMensagensEmTempoReal(adicionaMensagem) {
+    return supabaseClient
+        .from('mensagens')
+        .on('INSERT', (respostaLive) => {
+            adicionaMensagem(respostaLive.new);
+        })
+        .subscribe()
+}
 
 export default function ChatPage() {
+    const roteamento = useRouter();
+    const usuarioLogado = roteamento.query.username;
     const [mensagem, setMensagem] = React.useState('');
     const [listaDeMensagens, setListaDeMensagens] = React.useState([]);
 
+    React.useEffect(() => {
+        supabaseClient
+            .from('mensagens')
+            .select('*')
+            .order('id', { ascending: false })
+            .then(({ data }) => {
+                // console.log('Dados:', data);
+                setListaDeMensagens(data);
+            });
+
+        const subscription = escutaMensagensEmTempoReal((novaMensagem) => {
+                // Se quero reutilizar um valor de referência (objeto/array)
+                // temos que passar uma função pro set, e não apenas variáveis
+                setListaDeMensagens((valorAtualDaLista) => {
+                    return [
+                    novaMensagem,
+                    ...valorAtualDaLista,
+                    ]
+                });
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        }
+
+    }, []);
+
     function handleNovaMensagem(novaMensagem) {
         const mensagem = {
-            id: listaDeMensagens.length + 1,
-            de: 'fabriciocarraro',
+            // id: listaDeMensagens.length + 1,
+            de: usuarioLogado,
             texto: novaMensagem,
-        }
-        setListaDeMensagens([
-            mensagem,
-            ...listaDeMensagens,
-        ]);
+        };
+
+        supabaseClient
+            .from('mensagens')
+            .insert([mensagem]) //tem que ser um objeto com os mesmos campos do supabase
+            .then(({ data }) => {
+                console.log(data);
+                // setListaDeMensagens([
+                //     data[0],
+                //     ...listaDeMensagens,
+                // ]);
+            })
+
         setMensagem('');
     }
 
@@ -100,6 +153,11 @@ export default function ChatPage() {
                                 color: appConfig.theme.colors.neutrals[200],
                             }}
                         />
+                        <ButtonSendSticker
+                            onStickerClick={(sticker) => {
+                                handleNovaMensagem(`:sticker:${sticker}`)
+                            }}
+                        />
                     </Box>
                 </Box>
             </Box>
@@ -166,7 +224,7 @@ function MessageList(props) {
                                     display: 'inline-block',
                                     marginRight: '8px',
                                 }}
-                                src={`https://github.com/fabriciocarraro.png`}
+                                src={`https://github.com/${mensagem.de}.png`}
                             />
                             <Text tag="strong">
                                 {mensagem.de}
@@ -182,7 +240,14 @@ function MessageList(props) {
                                 {(new Date().toLocaleDateString())}
                             </Text>
                         </Box>
-                        {mensagem.texto}
+                        {mensagem.texto.startsWith(':sticker:')
+                            ? (
+                                <Image src={mensagem.texto.replace(':sticker:', '')} />
+                            )
+                            :(
+                                mensagem.texto
+                            )
+                        }
                     </Text>
                 );
             })}
